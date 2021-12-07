@@ -18,9 +18,11 @@ class Conv(BaseLayer):
         self.bias = np.random.uniform(0, 1, (num_kernels, 1))
         self._optimizer = None
         self._bias_optimizer = None
-        self._gradient_weights = None
-        self._gradient_bias = None
+        self._gradient_weights = 0
+        self._gradient_bias = 0
         self._last_input = None
+        self._padded_input = None
+        self._tmp_array = None
 
         # weight dimension: [num_kernel, channel, conv_dim, conv_dim]
 
@@ -40,21 +42,24 @@ class Conv(BaseLayer):
             f_x = self.convolution_shape[1]
             pad_x = int(f_x / 2)
             # Check whether the kernel size is even or not
-            if f_x % 2 == 0:
+            if f_x % 2 == 0:  # if kernel size is even
                 n_x = int(((n_x - f_x) + (2 * pad_x) - 1) / self.stride_shape[0]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x - 1)))
             else:
                 n_x = int(((n_x - f_x) + (2 * pad_x)) / self.stride_shape[0]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x)))
 
             out = np.zeros((batch, self.num_kernels, n_x))
-            for i in range(batch):
-                x = input_tensor[i, :]
+            for b in range(batch):
+                x = input_tensor[b, :]
                 for k in range(self.num_kernels):
                     for c in range(ch):
                         x_corr = correlate(x[c, :], self.weights[k, c, :], mode='same')
+                        print("x correlation shape:", x_corr.shape)
                         # The basic slice syntax is i:j:k where i is the starting index,
                         # j is the stopping index, and k is the step.
-                        out[i, k, :] += x_corr[::self.stride_shape[0]]
-                    out[i, k, :] += self.bias[k]
+                        out[b, k, :] += x_corr[::self.stride_shape[0]]
+                    out[b, k, :] += self.bias[k]
             return out
 
         else:
@@ -67,24 +72,28 @@ class Conv(BaseLayer):
 
             if f_x % 2 == 0:  # if kernel size is even
                 n_x = int(((n_x - f_x) + (2 * pad_x) - 1) / self.stride_shape[0]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x - 1), (pad_y, pad_y)))
             else:
                 n_x = int(((n_x - f_x) + (2 * pad_x)) / self.stride_shape[0]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x), (pad_y, pad_y)))
 
             if f_y % 2 == 0:  # if kernel size is even
                 n_y = int(((n_y - f_y) + (2 * pad_y) - 1) / self.stride_shape[1]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x), (pad_y, pad_y - 1)))
             else:
                 n_y = int(((n_y - f_y) + (2 * pad_y)) / self.stride_shape[1]) + 1
+                self._padded_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x), (pad_y, pad_y)))
 
             out = np.zeros((batch, self.num_kernels, n_x, n_y))  # result
 
-            # pad the input tensor and save it in class variable
-            # self._last_input = np.pad(input_tensor, ((0, 0), (0, 0), (pad_x, pad_x), (pad_y, pad_y-1)))
-            # print("input tensor shape: ", input_tensor.shape)
             for b in range(batch):
                 x = input_tensor[b, :]
                 for k in range(self.num_kernels):
                     for c in range(ch):
-                        x_corr = correlate(x[c, :], self.weights[k, c, :], mode='same')
+                        x_corr = correlate(self._padded_input[b, c, :], self.weights[k, c, :], mode='valid')
+                        # x_2_corr = correlate(x[c, :], self.weights[k, c, :], mode='same')  #equals to the above line
+                        # print("x corr shape: ", x_corr.shape)
+                        # self._tmp_array = np.zeros_like(x_corr)
                         # The basic slice syntax is i:j:k where i is the starting index,
                         # j is the stopping index, and k is the step.
                         out[b, k, :] += x_corr[::self.stride_shape[0], ::self.stride_shape[1]]
@@ -93,34 +102,38 @@ class Conv(BaseLayer):
 
     def backward(self, error_tensor):
         """
-        :param error_tensor -> dim: [b: batch, ch: number of channels, y, x: spatial dim]
-        :return: error_tensor(for the prev layer) -> dim: [b: batch, ch: number of channels, y, x: spatial dim]
+        :param error_tensor -> dim: [b: batch, k: number of kernels, y, x: spatial dim]
+        :return: error_tensor(for the prev layer) -> dim: [b: batch, k: number of kernels, y, x: spatial dim]
         """
-        channel = self._last_input.shape[1]
-        batch, kernels, x, y = error_tensor.shape
-        output = np.zeros((batch,  *self._last_input.shape[1:]))
-        for b in range(batch):
-            input_tensor = self._last_input[b, :]
-            error_tensor_slice = error_tensor[b, :]
-            for k in range(kernels):
-                for c in range(channel):
-                    print("length of stride: ", len(self.stride_shape))
-                    # 2d stride
-                    # if len(self.stride_shape) > 1:
-                    #     error_tensor_slice[::self.stride_shape[0], ::self.stride_shape[1]] = error_tensor_slice[k, c, :]
-                    #     print("Error T: ", error_tensor_slice)
-                    # else:
-                    #     error_tensor_slice[::self.stride_shape[0]] = error_tensor_slice[c,:]
-                    print("error shape: ", error_tensor_slice[k, :].shape)
-                    print("weight shape: ", self.weights[k, c, :].shape)
-                    output[b, c, :] += convolve(error_tensor_slice[k, :], self.weights[k, c, :], mode='same')
+        # weight shape: [k, c, y, x]
+        # error_tensor: [b, c, y, x]
+        # gradient_weights:
+        # gradient_bias:
 
-                    self._gradient_weights = convolve(input_tensor[c, :], error_tensor_slice[c, :], mode='valid')
-                    self._gradient_bias = np.sum(error_tensor, )
+        channels = self._last_input.shape[1]
+        self._gradient_bias = np.full_like(self.bias, 0)
+        self._gradient_weights = np.full_like(self.weights, 0)
+        # 1d input
+        if len(error_tensor.shape) == 3:
+            batch, kernels, x = error_tensor.shape
+            output = np.zeros((batch, self._last_input.shape[1], self._last_input.shape[2]))
+            for b in range(batch):
+                for c in range(channels):
+                    for k in range(kernels):
+                        error_t = np.zeros(output[b, c, :].shape)
+                        error_t[::self.stride_shape[0]] = error_tensor[b, k, :]
+                        output[b, c, :] += convolve(error_t, self.weights[k, c, :], mode='same')
+        else:
+            batch, kernels, x, y = error_tensor.shape
+            output = np.zeros((batch,  *self._last_input.shape[1:]))
 
-                    if self._optimizer:  # update weights
-                        self.weights = self._optimizer.calculate_update(self.weights, self._gradient_weights)
-                        self.bias = self._bias_optimizer.calculate_update(self.bias, self._gradient_bias)
+            for b in range(batch):
+                for c in range(channels):
+                    for k in range(kernels):
+                        error_t = np.zeros(output[b, c, :].shape)
+                        error_t[::self.stride_shape[0], ::self.stride_shape[1]] = error_tensor[b, k, :]
+                        output[b, c, :] += convolve(error_t, self.weights[k, c, :], mode='same')
+
         return output
 
     def initialize(self, w_init, b_init):
