@@ -12,7 +12,6 @@ class Flatten(BaseLayer):
         """
         :param input_tensor: dim= (b: batch_size, input_shape[0], input_shape[1], input_shape[2]) [b, ch, spatial_dim] (2, 3, 1, 7)
         :return: input_tensor for next layer: dim= (b, the product of input_shape) (2, 21)
-
         """
         self.input_tensor_shape = input_tensor.shape
         input_tensor = input_tensor.reshape(input_tensor.shape[0], np.prod(input_tensor.shape[1:]))
@@ -20,14 +19,10 @@ class Flatten(BaseLayer):
 
     def backward(self, error_tensor):
         """
-
         :param error_tensor: dim= [b, the product of input_shape]
         :return: error_tensor for the previous layer: dim=(b: batch_size, input_shape[0],
         input_shape[1], input_shape[2])
         """
-        error_tensor = error_tensor.reshape(self.input_tensor_shape[0],
-                                            self.input_tensor_shape[1],
-                                            self.input_tensor_shape[2],
-                                            self.input_tensor_shape[3])
+        error_tensor = error_tensor.reshape(self.input_tensor_shape)
 
         return error_tensor
