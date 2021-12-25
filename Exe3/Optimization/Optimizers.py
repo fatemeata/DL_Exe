@@ -12,6 +12,7 @@ class Optimizer:
 
 class Sgd(Optimizer):
     def __init__(self, lr):
+        super().__init__()
         self.learning_rate = lr
 
     def calculate_update(self, weight_tensor, gradient_tensor):
@@ -27,6 +28,7 @@ class Sgd(Optimizer):
 # TODO: implement sgd with momentum optimizer
 class SgdWithMomentum(Optimizer):
     def __init__(self, lr, mr):
+        super().__init__()
         self.learning_rate = lr
         self.momentum_rate = mr
         self.momentum_term = 0
@@ -44,6 +46,7 @@ class SgdWithMomentum(Optimizer):
 # TODO: implement ADAM optimizer
 class Adam(Optimizer):
     def __init__(self, lr, mu, rho):
+        super().__init__()
         self.learning_rate = lr
         self.mu = mu
         self.rho = rho
